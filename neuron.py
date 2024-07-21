@@ -1,21 +1,20 @@
 import pickle
 import timeit
-from time import sleep
+from copy import deepcopy
 from heapq import nlargest, nsmallest
+from random import sample
+from time import sleep
+from uuid import uuid4
 import numpy as np
+import vispy
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
-from utils import flatten_list, cords, distance
-from random import sample
-import vispy
+from vispy import app, visuals, gloo
 from vispy.scene import visuals
-from vispy import gloo
 from vispy.util.transforms import perspective, translate, rotate
-from vispy import app, visuals, scene
-from uuid import uuid4
-from copy import deepcopy
-from random import random
-
+from utils import flatten_list, cords, distance
+from threading import Thread
+from multiprocessing import Process
 
 class Neuron:
     def __init__(self, id, type=0):
@@ -23,7 +22,7 @@ class Neuron:
         self.cords = cords(10)
         self.axon_ids = []
         self.dendrite_ids = []
-        self.threshold = 0.8
+        self.threshold = 1
         self.charge = 0
         self.long_distance = type
         self.color = 'red' if type == 0 else 'green'
@@ -37,7 +36,7 @@ class Neuron:
 
 
 class Net:
-    def __init__(self, n_neurons, synapses_count):
+    def __init__(self, n_neurons=None, synapses_count=(None, None)):
         self.n_neurons = n_neurons
         self.max_axon, self.max_dendrite = synapses_count
         self.neurons = dict()
@@ -195,6 +194,29 @@ class Net:
                 self.step()
                 sleep(delay)
 
+    def plot_propagation(self, steps, delay=1):
+        self.step()
+        def timed_step(net: Net, steps, delay):
+            sleep(5)
+            for i in range(steps):
+                if len(net.signals) == 0:
+                    print(f'Signal died at step {i+1}/{steps}')
+                    break
+                net.step()
+                sleep(delay)
+            else:
+                print(f'Propagated {i+1} steps')
+
+        t = Thread(target=timed_step, args=(self, steps, delay))
+        canvas = Plotter(self, animation=True, step_func=t)
+        canvas.show()
+        app.run()
+
+    def show_network_parallel(self):
+        p = Thread(target=visualizator, args=(self,))
+        p.start()
+
+
     def plot_connections(self):
         x, y, z = [], [], []
 
@@ -217,7 +239,7 @@ class Net:
         plt.show()
 
     def plot_gpu(self):
-        canvas = Canvas(self.neurons)
+        canvas = Plotter(self, )
         canvas.show()
         app.run()
 
@@ -263,7 +285,12 @@ class Net:
         self.n_neurons = obj['n_neurons']
         self.merges = obj['merges']
 
-class Canvas(app.Canvas):
+def visualizator(net: Net):
+    canvas = Plotter(net, real_time=True)
+    canvas.show()
+    app.run()
+
+class Plotter(app.Canvas):
     VERT_SHADER = """
     #version 120
     attribute vec3 a_position;
@@ -287,14 +314,14 @@ class Canvas(app.Canvas):
     }
     """
 
-    def __init__(self, neurons):
+    def __init__(self, network: Net, real_time=False, animation=False, step_func: Thread=None):
         app.Canvas.__init__(self, keys='interactive', size=(800, 600))
-        self.neurons = neurons
-
+        self.net = network
+        self.animation = animation
+        self.real_time = real_time
         self.program = gloo.Program(self.VERT_SHADER, self.FRAG_SHADER)
-
-        scatter_data = np.array([n.cords for n in self.neurons.values()], dtype=np.float32)
-        scatter_colors = np.array([[1, 0, 0] for _ in self.neurons.values()], dtype=np.float32)  # red color for points
+        scatter_data = np.array([n.cords for n in self.net.neurons.values()], dtype=np.float32)
+        scatter_colors = np.array([[1, 0, 0] for _ in self.net.neurons.values()], dtype=np.float32)  # red color for points
 
         self.scatter_buffer = gloo.VertexBuffer(scatter_data)
         self.color_buffer = gloo.VertexBuffer(scatter_colors)
@@ -303,13 +330,14 @@ class Canvas(app.Canvas):
         self.program['a_color'] = self.color_buffer
 
         self.lines = []
-        for n in self.neurons.values():
-            x, y, z = n.cords
-            for n2 in n.axon_ids:
-                x1, y1, z1 = self.neurons[n2].cords
-                line_data = np.array([[x, y, z], [x1, y1, z1]], dtype=np.float32)
-                line_colors = np.array([[0, 0, 1], [0, 0, 1]], dtype=np.float32)  # blue color for lines
-                self.lines.append((gloo.VertexBuffer(line_data), gloo.VertexBuffer(line_colors)))
+        if not self.animation and not real_time:
+            for n in self.net.neurons.values():
+                x, y, z = n.cords
+                for n2 in n.axon_ids:
+                    x1, y1, z1 = self.net.neurons[n2].cords
+                    line_data = np.array([[x, y, z], [x1, y1, z1]], dtype=np.float32)
+                    line_colors = np.array([[0, 0, 1], [0, 0, 1]], dtype=np.float32)  # blue color for lines
+                    self.lines.append((gloo.VertexBuffer(line_data), gloo.VertexBuffer(line_colors)))
 
         self.model = np.eye(4, dtype=np.float32)
         self.view = translate((0, 0, -5))
@@ -324,6 +352,8 @@ class Canvas(app.Canvas):
         gloo.set_state(clear_color='white', blend=True, blend_func=('src_alpha', 'one_minus_src_alpha'))
 
         self._init_transforms()
+        if animation:
+            step_func.start()
 
     def _init_transforms(self):
         self.translate = [0, 0, -5]
@@ -373,11 +403,23 @@ class Canvas(app.Canvas):
         self.program['a_color'] = self.color_buffer
         self.program.draw('points')
 
-        # Draw lines
-        for line_buffer, color_buffer in self.lines:
-            self.program['a_position'] = line_buffer
-            self.program['a_color'] = color_buffer
-            self.program.draw('lines')
+        if not self.animation and not self.real_time:
+            # Draw lines
+            for line_buffer, color_buffer in self.lines:
+                self.program['a_position'] = line_buffer
+                self.program['a_color'] = color_buffer
+                self.program.draw('lines')
+        elif self.animation or self.real_time:
+            for signal in self.net.signals:
+                if len(signal) < 2:
+                    continue
+                x, y, z = self.net.neurons[signal[-2]].cords
+                x1, y1, z1 = self.net.neurons[signal[-1]].cords
+                line_data = np.array([[x, y, z], [x1, y1, z1]], dtype=np.float32)
+                line_colors = np.array([[0, 0, 1], [0, 0, 1]], dtype=np.float32)  # blue color for lines
+                self.program['a_position'] = gloo.VertexBuffer(line_data)
+                self.program['a_color'] = gloo.VertexBuffer(line_colors)
+                self.program.draw('lines')
 
 class Brain:
     def __init__(self):
