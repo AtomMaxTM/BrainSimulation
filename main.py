@@ -1,24 +1,32 @@
 import timeit
 from random import random, seed
-from neuron import Net, Brain, Neuron
+from time import sleep
+
+import numpy as np
+
+from neuron import Net, Brain, Neuron, InputNeuron, OutputNeuron
 
 neuron_function = lambda x: Neuron(x, 1)
 
 def main():
-    seed(30)
-    net1 = Net(100, (10,)*2)
-    net1.create_network(distance_mode=True, verbose=True)
-    # net2 = Net(200, (4,)*2)
-    # net2.create_network(distance_mode=True, verbose=True)
-    # net1 = net1.merge(net2, 10, 10, 4, 4)
-    # net1.load('1000_10')
-    # net1.plot_gpu()
-    net1.set_start_signal(list(range(20)))
-    # net1.propagate(10)
-    # net1.set_start_signal([1, 10, 21, 20, 30, 40, 50])
-    # net1.plot_propagation(25, 0.5)
-    net1.show_network_parallel()
-    net1.propagate(20, delay=0.25)
+    # seed(30)
+    net = Net(100, (10,)*2, (5, 5), (5, 5))
+    # net.create_network(lambda x: Neuron(x, 0 if random() > 0.5 else 1, 0 if random() > 0.9 else 1), distance_mode=True, verbose=True)
+    # net.save('test')
+    net.load('test')
+    # net.plot_gpu()
+    # net.add_input(np.random.randn(5, 5))
+    net.add_input(np.array([
+        [1, 1, 1, 1, 1],
+        [0, 0, 1, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 1, 0, 0]
+    ]))
+    # net.show_network_parallel()
+    # sleep(3)
+    net.propagate(10)
+
 
 if __name__ == '__main__':
     t_0 = timeit.default_timer()
