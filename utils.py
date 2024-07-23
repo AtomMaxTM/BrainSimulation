@@ -18,26 +18,40 @@ def flatten_list(lst):
             flat_list.append(item)
     return flat_list
 
+def loss(a, b):
+    return a - b
 
-# def connect_neurons_tree_unimplemented(self):
-#     center = sample(range(self.n_neurons), 1)
-#     connect = []
-#     for i in center:
-#         for j in range(self.n_neurons):
-#             if j == i:
-#                 continue
-#             connect.append((distance(self.neurons[i].cords, self.neurons[j].cords), j))
-#     connect = list(map(lambda x: self.neurons[x[1]], nsmallest(self.max_axon, connect, key=lambda x: x[0])))
+def overall_loss(a, b):
+    return np.mean((a - b) ** 2)
 
-# def plot_connections_temp(self):
-#         fig = plt.figure()
-#         ax = fig.add_subplot(projection='3d')
-#         t = self.base_neuron.cords
-#         ax.scatter(t[0], t[1], t[2], marker='o', c="red")
-#         for n in self.connect:
-#             temp = n.cords
-#             ax.scatter(temp[0], temp[1], temp[2], marker='^', c='green')
-#         ax.set_xlabel('X')
-#         ax.set_ylabel('Y')
-#         ax.set_zlabel('Z')
-#         plt.show()
+class SimpleOptimizer:
+    def __init__(self, lr):
+        self.lr = lr
+
+    def step(self):
+        pass
+
+    def __call__(self, grad):
+        return -(grad * self.lr)
+
+
+optimizers = {
+   'simple': SimpleOptimizer
+}
+
+
+class Optimizer:
+    def __init__(self, optimizer='simple', **kwargs):
+        self.optimizer = optimizers[optimizer](**kwargs)
+
+    def step(self):
+        self.optimizer.step()
+
+    def __call__(self, grad):
+        # print(grad)
+        return self.optimizer(grad)
+
+
+
+
+
